@@ -64,7 +64,8 @@ public class WebImageContainerView extends RelativeLayout {
     try {
       URL imageUrl = new URL(imageUrlString);
       webImageView.setListener(listener);
-      webImageView.setImageUrl(imageUrl, options, R.drawable.person_placeholder_error, R.drawable.person_placeholder);
+      // webImageView.setImageUrl(imageUrl, options, R.drawable.person_placeholder_error, R.drawable.person_placeholder);
+      webImageView.setImageUrl(imageUrl, options, R.drawable.person_placeholder_error, R.drawable.loading_animation, true);
     }
     catch(MalformedURLException e) {
       e.printStackTrace();

@@ -23,6 +23,7 @@ package com.wrapp.android.webimage;
 
 import android.content.Context;
 import android.graphics.BitmapFactory;
+import android.graphics.drawable.AnimationDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Handler;
 import android.util.AttributeSet;
@@ -125,6 +126,10 @@ public class WebImageView extends ImageView implements ImageRequest.Listener {
    * @param placeholderImageResId Resource ID to set for placeholder image while image is loading.
    */
   public void setImageUrl(URL imageUrl, BitmapFactory.Options options, int errorImageResId, int placeholderImageResId) {
+    setImageUrl(imageUrl, options, errorImageResId, placeholderImageResId, false);
+  }
+
+  public void setImageUrl(URL imageUrl, BitmapFactory.Options options, int errorImageResId, int placeholderImageResId, boolean isPlaceholderAnimated) {
     if(imageUrl == null) {
       return;
     }
@@ -143,11 +148,16 @@ public class WebImageView extends ImageView implements ImageRequest.Listener {
     else if(placeholderImageResId > 0) {
       setImageResource(placeholderImageResId);
     }
+    if(isPlaceholderAnimated && !ImageCache.isImageCached(getContext(), ImageCache.getCacheKeyForUrl(imageUrl))) {
+      AnimationDrawable animationDrawable = (AnimationDrawable)getDrawable();
+      animationDrawable.start();
+    }
+
+    currentImageUrl = imageUrl;
+    ImageLoader.load(getContext(), imageUrl, this, options);
     if(this.listener != null) {
       listener.onImageLoadStarted();
     }
-    currentImageUrl = imageUrl;
-    ImageLoader.load(getContext(), imageUrl, this, options);
   }
 
   /**
