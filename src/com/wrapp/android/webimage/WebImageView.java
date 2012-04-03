@@ -22,6 +22,7 @@
 package com.wrapp.android.webimage;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.AnimationDrawable;
 import android.graphics.drawable.Drawable;
@@ -45,12 +46,15 @@ public class WebImageView extends ImageView implements ImageRequest.Listener {
   private int errorImageResId;
   private Drawable placeholderImage;
   private int placeholderImageResId;
-  private URL currentImageUrl;
+  private URL loadedImageUrl;
+  private URL pendingImageUrl;
 
   private enum States {
     EMPTY,
     LOADING,
     LOADED,
+    RELOADING,
+    CANCELLED,
     ERROR,
   }
   private States currentState = States.EMPTY;
@@ -133,7 +137,7 @@ public class WebImageView extends ImageView implements ImageRequest.Listener {
     if(imageUrl == null) {
       return;
     }
-    else if(imageUrl.equals(currentImageUrl) && currentState == States.LOADED) {
+    else if(currentState == States.LOADED && imageUrl.equals(loadedImageUrl)) {
       return;
     }
 
@@ -153,7 +157,7 @@ public class WebImageView extends ImageView implements ImageRequest.Listener {
       animationDrawable.start();
     }
 
-    currentImageUrl = imageUrl;
+    pendingImageUrl = imageUrl;
     ImageLoader.load(getContext(), imageUrl, this, options);
     if(this.listener != null) {
       listener.onImageLoadStarted();
@@ -172,21 +176,32 @@ public class WebImageView extends ImageView implements ImageRequest.Listener {
    * @param response Request response
    */
   public void onBitmapLoaded(final RequestResponse response) {
-    currentState = States.LOADED;
-    if(response.imageUrl.equals(currentImageUrl)) {
+    if(response.originalRequest.imageUrl.equals(pendingImageUrl)) {
       postToGuiThread(new Runnable() {
         public void run() {
-          setImageBitmap(response.bitmap);
+          final Bitmap bitmap = response.bitmapReference.get();
+          if(bitmap != null) {
+            setImageBitmap(bitmap);
+            currentState = States.LOADED;
+            loadedImageUrl = response.originalRequest.imageUrl;
+            pendingImageUrl = null;
+            if(listener != null) {
+              listener.onImageLoadComplete();
+            }
+          }
+          else {
+            // The garbage collecter has cleaned up this bitmap by now (yes, that does happen), so re-issue the request
+            ImageLoader.load(getContext(), response.originalRequest.imageUrl, response.originalRequest.listener, response.originalRequest.loadOptions);
+            currentState = States.RELOADING;
+          }
         }
       });
-      if(listener != null) {
-        listener.onImageLoadComplete();
-      }
     }
     else {
       if(listener != null) {
         listener.onImageLoadCancelled();
       }
+      currentState = States.CANCELLED;
     }
   }
 
@@ -218,7 +233,7 @@ public class WebImageView extends ImageView implements ImageRequest.Listener {
   protected void onWindowVisibilityChanged(int visibility) {
     super.onWindowVisibilityChanged(visibility);
     if(visibility == VISIBLE && currentState == States.LOADING) {
-      setImageUrl(currentImageUrl);
+      setImageUrl(loadedImageUrl);
     }
   }
 
@@ -228,6 +243,7 @@ public class WebImageView extends ImageView implements ImageRequest.Listener {
    * reason it is recommended not to do so much work in this method.
    */
   public void onBitmapLoadCancelled() {
+    currentState = States.CANCELLED;
     if(listener != null) {
       listener.onImageLoadCancelled();
     }

@@ -31,6 +31,8 @@ public abstract class TaskQueueThread extends Thread {
   private boolean isRunning;
 
   protected abstract Bitmap processRequest(ImageRequest request);
+  protected abstract void onRequestComplete(RequestResponse response);
+  protected abstract void onRequestCancelled(ImageRequest request);
 
   public TaskQueueThread(final String taskName) {
     super(taskName);
@@ -54,27 +56,37 @@ public abstract class TaskQueueThread extends Thread {
           }
         }
 
-        request = getNextRequest(pendingRequests);
-      }
-
-      if(request != null && request.listener != null) {
         try {
-          Bitmap bitmap = processRequest(request);
-          if(pruneDuplicateRequests(request, pendingRequests)) {
-            if(bitmap != null) {
-              request.listener.onBitmapLoaded(new RequestResponse(bitmap, request.imageUrl));
-            }
-            else {
-              request.listener.onBitmapLoadCancelled();
-            }
-          }
-          else {
-            request.listener.onBitmapLoadCancelled();
-          }
+          request = getNextRequest(pendingRequests);
         }
         catch(Exception e) {
-          request.listener.onBitmapLoadError(e.getMessage());
+          continue;
         }
+      }
+
+      try {
+        if(request != null && request.listener != null) {
+          try {
+            Bitmap bitmap = processRequest(request);
+            synchronized(pendingRequests) {
+              if(isRequestStillValid(request, pendingRequests)) {
+                if(bitmap != null) {
+                  onRequestComplete(new RequestResponse(bitmap, request));
+                }
+              }
+              else {
+                LogWrapper.logMessage("Bitmap request is no longer valid: " + request.imageUrl);
+                onRequestCancelled(request);
+              }
+            }
+          }
+          catch(Exception e) {
+            request.listener.onBitmapLoadError(e.getMessage());
+          }
+        }
+      }
+      catch(Exception e) {
+        LogWrapper.logException(e);
       }
     }
 
@@ -97,6 +109,9 @@ public abstract class TaskQueueThread extends Thread {
   private ImageRequest getNextRequest(Queue<ImageRequest> requestQueue) {
     // Pop the first element from the pending request queue
     ImageRequest request = requestQueue.poll();
+    if(request.listener == null) {
+      return request;
+    }
 
     // Go through the list of pending requests, pruning duplicate requests and using the latest URL
     // requested by a particular listener. It is quite common that a listener will request multiple
@@ -123,7 +138,7 @@ public abstract class TaskQueueThread extends Thread {
     return request;
   }
 
-  private boolean pruneDuplicateRequests(ImageRequest finishedRequest, Queue<ImageRequest> requestQueue) {
+  private boolean isRequestStillValid(ImageRequest finishedRequest, Queue<ImageRequest> requestQueue) {
     for(ImageRequest checkRequest : requestQueue) {
       if(finishedRequest.listener.equals(checkRequest.listener) &&
         !finishedRequest.imageUrl.equals(checkRequest.imageUrl)) {
